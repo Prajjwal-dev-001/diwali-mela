@@ -6962,6 +6962,14 @@ function uo() {
     y.avatar ||
       (y.outfit && y.inventory.kurta ? { gender: "boy", outfit: "kurta" } : Ft),
   );
+  if (typeof broadcastRPC === "function") {
+    broadcastRPC({
+      type: "OUTFIT_CHANGE",
+      role: window.playerRole || y.avatar?.gender || "boy",
+      gender: y.avatar?.gender,
+      outfit: y.avatar?.outfit
+    });
+  }
 }
 uo();
 const At = new Qe(
@@ -7333,11 +7341,100 @@ function spawnFloatingParticles(x, y, z, type = "heart") {
 }
 
 function getBedroomCompanion() {
+  if (window.couplePhase3?.partnerMesh) {
+    return window.couplePhase3.partnerMesh;
+  }
   if (typeof i !== "undefined" && i && i.size > 0) {
     return Array.from(i.values())[0];
   }
   return pe?.companion || null;
 }
+
+function triggerBedAction(subAction, isRemote = false, rpcData = null) {
+  const comp = getBedroomCompanion() || (typeof getOrCreateCouplePartner === "function" ? getOrCreateCouplePartner() : null);
+  if (subAction === "sleep" || subAction === "lie") {
+    coupleActionState = "lie";
+    K.set(-8.1, 0.45, -6.5);
+    je.group.position.copy(K);
+    je.group.rotation.y = 0;
+    je.pose.position.set(0, 0.42, 0);
+    je.pose.rotation.set(-Math.PI / 2, 0, 0);
+    if (comp) {
+      comp.group.position.set(-6.9, 0.45, -6.5);
+      comp.group.rotation.y = 0;
+      comp.pose.position.set(0, 0.42, 0);
+      comp.pose.rotation.set(-Math.PI / 2, 0, -0.15);
+      comp.group.visible = true;
+    }
+    const btn = document.getElementById("act-bed");
+    if (btn) btn.textContent = "🛏️ Uth jao (Stand Up)";
+    spawnFloatingParticles(-7.5, 1.2, -6.5, "heart");
+    oe("Pyar se sath me lete hue... 🛏️💖", null, 3000);
+  } else if (subAction === "stand" || subAction === "wake") {
+    coupleActionState = null;
+    je.pose.position.set(0, 0, 0);
+    je.pose.rotation.set(0, 0, 0);
+    K.set(-7.5, 0, -4.8);
+    je.group.position.copy(K);
+    if (comp) {
+      comp.pose.position.set(0, 0, 0);
+      comp.pose.rotation.set(0, 0, 0);
+      comp.group.position.set(-5.2, 0, -5.8);
+      comp.group.rotation.y = -Math.PI / 3;
+    }
+    const btn = document.getElementById("act-bed");
+    if (btn) btn.textContent = "🛏️ Sath me letna";
+    oe("Wapas khade ho gaye! ✨", null, 2000);
+  } else if (subAction === "kiss") {
+    coupleActionState = "kiss";
+    coupleActionTimer = ve + 3.5;
+    if (comp) {
+      const dirX = Math.sin(je.group.rotation.y);
+      const dirZ = Math.cos(je.group.rotation.y);
+      comp.group.position.set(K.x + dirX * 0.55, 0, K.z + dirZ * 0.55);
+      comp.group.rotation.y = je.group.rotation.y + Math.PI;
+      je.pose.rotation.x = 0.22;
+      comp.pose.rotation.x = 0.22;
+      if (je.arms?.[0]) je.arms[0].rotation.set(0.4, 0.3, -0.2);
+      if (je.arms?.[1]) je.arms[1].rotation.set(0.4, -0.3, 0.2);
+      if (comp.arms?.[0]) comp.arms[0].rotation.set(0.4, 0.3, -0.2);
+      if (comp.arms?.[1]) comp.arms[1].rotation.set(0.4, -0.3, 0.2);
+      comp.group.visible = true;
+    }
+    spawnFloatingParticles(K.x, 1.5, K.z, "heart");
+    oe("Ek pyara sa kiss! 💋💖✨", null, 3000);
+  } else if (subAction === "hug") {
+    coupleActionState = "hug";
+    coupleActionTimer = ve + 4.0;
+    if (comp) {
+      const dirX = Math.sin(je.group.rotation.y);
+      const dirZ = Math.cos(je.group.rotation.y);
+      comp.group.position.set(K.x + dirX * 0.48, 0, K.z + dirZ * 0.48);
+      comp.group.rotation.y = je.group.rotation.y + Math.PI;
+      je.pose.rotation.x = 0.12;
+      comp.pose.rotation.x = 0.12;
+      if (je.arms?.[0]) je.arms[0].rotation.set(0.7, 0.9, -0.5);
+      if (je.arms?.[1]) je.arms[1].rotation.set(0.7, -0.9, 0.5);
+      if (comp.arms?.[0]) comp.arms[0].rotation.set(0.7, 0.9, -0.5);
+      if (comp.arms?.[1]) comp.arms[1].rotation.set(0.7, -0.9, 0.5);
+      comp.group.visible = true;
+    }
+    spawnFloatingParticles(K.x, 1.3, K.z, "sparkle");
+    oe("Warm & cozy hug... 🫂❤️", null, 3000);
+  }
+
+  if (!isRemote && typeof broadcastRPC === "function") {
+    broadcastRPC({
+      type: "BEDROOM_ACTION",
+      subAction,
+      initiatorRole: window.playerRole || (y?.avatar?.gender === "girl" ? "girl" : "boy"),
+      anchorPos: { x: K.x, y: K.y, z: K.z },
+      anchorRotY: je.group.rotation.y,
+      timestamp: Date.now()
+    });
+  }
+}
+window.triggerBedAction = triggerBedAction;
 
 const coupleDock = document.createElement("aside");
 coupleDock.id = "couple-actions-dock";
@@ -7354,82 +7451,17 @@ document.body.append(coupleDock);
 
 // Action 1: Sath me letna (Lie Down Together)
 document.getElementById("act-bed").onclick = () => {
-  const btn = document.getElementById("act-bed");
-  if (coupleActionState === "lie") {
-    // Stand up
-    coupleActionState = null;
-    je.pose.position.set(0, 0, 0);
-    je.pose.rotation.set(0, 0, 0);
-    K.set(-7.5, 0, -4.8);
-    je.group.position.copy(K);
-    const comp = getBedroomCompanion();
-    if (comp) {
-      comp.pose.position.set(0, 0, 0);
-      comp.pose.rotation.set(0, 0, 0);
-      comp.group.position.set(-5.2, 0, -5.8);
-      comp.group.rotation.y = -Math.PI / 3;
-    }
-    btn.textContent = "🛏️ Sath me letna";
-    oe("Wapas khade ho gaye! ✨", null, 2000);
-  } else {
-    coupleActionState = "lie";
-    K.set(-8.1, 0.45, -6.5);
-    je.group.position.copy(K);
-    je.group.rotation.y = 0;
-    je.pose.position.set(0, 0.42, 0);
-    je.pose.rotation.set(-Math.PI / 2, 0, 0);
-    const comp = getBedroomCompanion();
-    if (comp) {
-      comp.group.position.set(-6.9, 0.45, -6.5);
-      comp.group.rotation.y = 0;
-      comp.pose.position.set(0, 0.42, 0);
-      comp.pose.rotation.set(-Math.PI / 2, 0, -0.15);
-    }
-    btn.textContent = "🛏️ Uth jao (Stand Up)";
-    oe("Pyar se sath me lete hue... 🛏️💖", null, 3000);
-  }
+  triggerBedAction(coupleActionState === "lie" ? "stand" : "sleep", false);
 };
 
 // Action 2: Kiss
 document.getElementById("act-kiss").onclick = () => {
-  coupleActionState = "kiss";
-  coupleActionTimer = ve + 3.5;
-  const comp = getBedroomCompanion();
-  if (comp) {
-    const dirX = Math.sin(je.group.rotation.y);
-    const dirZ = Math.cos(je.group.rotation.y);
-    comp.group.position.set(K.x + dirX * 0.55, 0, K.z + dirZ * 0.55);
-    comp.group.rotation.y = je.group.rotation.y + Math.PI;
-    je.pose.rotation.x = 0.22;
-    comp.pose.rotation.x = 0.22;
-    if (je.arms?.[0]) je.arms[0].rotation.set(0.4, 0.3, -0.2);
-    if (je.arms?.[1]) je.arms[1].rotation.set(0.4, -0.3, 0.2);
-    if (comp.arms?.[0]) comp.arms[0].rotation.set(0.4, 0.3, -0.2);
-    if (comp.arms?.[1]) comp.arms[1].rotation.set(0.4, -0.3, 0.2);
-  }
-  spawnFloatingParticles(K.x, 1.5, K.z, "heart");
-  oe("Ek pyara sa kiss! 💋💖✨", null, 3000);
+  triggerBedAction("kiss", false);
 };
 
 // Action 3: Hug
 document.getElementById("act-hug").onclick = () => {
-  coupleActionState = "hug";
-  coupleActionTimer = ve + 4.0;
-  const comp = getBedroomCompanion();
-  if (comp) {
-    const dirX = Math.sin(je.group.rotation.y);
-    const dirZ = Math.cos(je.group.rotation.y);
-    comp.group.position.set(K.x + dirX * 0.48, 0, K.z + dirZ * 0.48);
-    comp.group.rotation.y = je.group.rotation.y + Math.PI;
-    je.pose.rotation.x = 0.12;
-    comp.pose.rotation.x = 0.12;
-    if (je.arms?.[0]) je.arms[0].rotation.set(0.7, 0.9, -0.5);
-    if (je.arms?.[1]) je.arms[1].rotation.set(0.7, -0.9, 0.5);
-    if (comp.arms?.[0]) comp.arms[0].rotation.set(0.7, 0.9, -0.5);
-    if (comp.arms?.[1]) comp.arms[1].rotation.set(0.7, -0.9, 0.5);
-  }
-  spawnFloatingParticles(K.x, 1.3, K.z, "sparkle");
-  oe("Warm & cozy hug... 🫂❤️", null, 3000);
+  triggerBedAction("hug", false);
 };
 const It = document.createElement("span");
 It.className = "shagun-latest";
@@ -8819,18 +8851,7 @@ function So(e) {
   }
 
   if (!inCoupleBedroom && coupleActionState === "lie") {
-    coupleActionState = null;
-    je.pose.position.set(0, 0, 0);
-    je.pose.rotation.set(0, 0, 0);
-    const bBed = document.getElementById("act-bed");
-    if (bBed) bBed.textContent = "🛏️ Sath me letna";
-    const comp = getBedroomCompanion();
-    if (comp) {
-      comp.pose.position.set(0, 0, 0);
-      comp.pose.rotation.set(0, 0, 0);
-      comp.group.position.set(-5.2, 0, -5.8);
-      comp.group.rotation.y = -Math.PI / 3;
-    }
+    triggerBedAction("stand", false);
   }
 
   // If player moves while lying down, stand back up
@@ -8838,18 +8859,7 @@ function So(e) {
     coupleActionState === "lie" &&
     (ne.size > 0 || Math.abs(ye.x) > 0.1 || Math.abs(ye.y) > 0.1)
   ) {
-    coupleActionState = null;
-    je.pose.position.set(0, 0, 0);
-    je.pose.rotation.set(0, 0, 0);
-    const bBed = document.getElementById("act-bed");
-    if (bBed) bBed.textContent = "🛏️ Sath me letna";
-    const comp = getBedroomCompanion();
-    if (comp) {
-      comp.pose.position.set(0, 0, 0);
-      comp.pose.rotation.set(0, 0, 0);
-      comp.group.position.set(-5.2, 0, -5.8);
-      comp.group.rotation.y = -Math.PI / 3;
-    }
+    triggerBedAction("stand", false);
   }
 
   // --- Phase 3: Hand-Holding & Auto-Follow Frame Sync ---
@@ -8903,6 +8913,44 @@ function So(e) {
         if (partner.legs?.[0]) partner.legs[0].rotation.x = 0;
         if (partner.legs?.[1]) partner.legs[1].rotation.x = 0;
       }
+    }
+  }
+
+  // --- Phase 3: Smooth Remote Partner Lerping & Animation ---
+  const activePartner = window.couplePhase3?.partnerMesh;
+  if (activePartner && activePartner.group && window.remoteTargetPosition) {
+    if (!window.couplePhase3?.isHoldingHands || window.playerRole !== "girl") {
+      const curPos = activePartner.group.position;
+      const targetPos = window.remoteTargetPosition;
+      const distSq = curPos.distanceToSquared(targetPos);
+      if (distSq > 64 || !Number.isFinite(curPos.x) || !Number.isFinite(curPos.z)) {
+        curPos.copy(targetPos);
+      } else {
+        curPos.lerp(targetPos, 0.18);
+      }
+
+      let diffRot = window.remoteTargetRotationY - activePartner.group.rotation.y;
+      while (diffRot < -Math.PI) diffRot += Math.PI * 2;
+      while (diffRot > Math.PI) diffRot -= Math.PI * 2;
+      activePartner.group.rotation.y += diffRot * 0.18;
+
+      if (window.remoteTargetAnim === "walk") {
+        const wCycle = Math.sin(ve * 11) * 0.48;
+        if (activePartner.legs?.[0]) activePartner.legs[0].rotation.x = wCycle;
+        if (activePartner.legs?.[1]) activePartner.legs[1].rotation.x = -wCycle;
+        if (activePartner.arms?.[0] && !window.couplePhase3?.isHoldingHands) activePartner.arms[0].rotation.x = -wCycle * 0.6;
+        if (activePartner.arms?.[1] && !window.couplePhase3?.isHoldingHands) activePartner.arms[1].rotation.x = wCycle * 0.6;
+      } else if (coupleActionState !== "kiss" && coupleActionState !== "hug" && coupleActionState !== "lie") {
+        if (activePartner.legs?.[0]) activePartner.legs[0].rotation.x = 0;
+        if (activePartner.legs?.[1]) activePartner.legs[1].rotation.x = 0;
+        if (activePartner.arms?.[0] && !window.couplePhase3?.isHoldingHands) activePartner.arms[0].rotation.x = 0;
+        if (activePartner.arms?.[1] && !window.couplePhase3?.isHoldingHands) activePartner.arms[1].rotation.x = 0;
+      }
+    }
+    // Guaranteed visibility
+    activePartner.group.visible = true;
+    if (typeof pe !== "undefined" && pe?.companion) {
+      pe.companion.group.visible = false;
     }
   }
 
@@ -9325,6 +9373,66 @@ window.couplePhase3 = {
   clappingNpcs: []
 };
 
+window.remoteTargetPosition = new se(0.65, 0, 12);
+window.remoteTargetRotationY = 0;
+window.remoteTargetAnim = "idle";
+window.remoteLastTransformTime = performance.now();
+
+const emojiTexCache = new Map();
+function getEmojiTex(emoji) {
+  if (emojiTexCache.has(emoji)) return emojiTexCache.get(emoji);
+  const cvs = document.createElement("canvas");
+  cvs.width = 128;
+  cvs.height = 128;
+  const ctx = cvs.getContext("2d");
+  ctx.font = "80px system-ui, sans-serif";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText(emoji, 64, 68);
+  const tex = new Qa(cvs);
+  tex.colorSpace = ca;
+  emojiTexCache.set(emoji, tex);
+  return tex;
+}
+
+function spawnFloatingEmoji(emoji, originPos, isRemote = false) {
+  if (!originPos) originPos = { x: K.x, y: K.y + 1.8, z: K.z };
+  const tex = getEmojiTex(emoji);
+  for (let i = 0; i < 4; i++) {
+    const mat = new Ot({
+      map: tex,
+      transparent: true,
+      opacity: 1,
+      side: 0,
+      depthWrite: false,
+    });
+    const geom = new Co(0.55, 0.55);
+    const sprite = new Qe(geom, mat);
+    sprite.position.set(
+      originPos.x + (Math.random() - 0.5) * 0.4,
+      originPos.y + (Math.random() - 0.5) * 0.3,
+      originPos.z + (Math.random() - 0.5) * 0.4,
+    );
+    sprite.userData = {
+      vy: 1.1 + Math.random() * 0.6,
+      vx: (Math.random() - 0.5) * 0.4,
+      vz: (Math.random() - 0.5) * 0.4,
+      age: 0,
+      life: 2.5 + Math.random() * 0.6,
+    };
+    ce.add(sprite);
+    coupleParticles.push(sprite);
+  }
+  if (!isRemote && typeof broadcastRPC === "function") {
+    broadcastRPC({
+      type: "FLOATING_EMOJI",
+      emoji,
+      originPos: { x: originPos.x, y: originPos.y, z: originPos.z }
+    });
+  }
+}
+window.spawnFloatingEmoji = spawnFloatingEmoji;
+
 // --- Web Audio Celebratory Cheering & Fanfare ---
 function playCelebrationFanfare() {
   try {
@@ -9378,17 +9486,37 @@ function playCelebrationFanfare() {
   }
 }
 
-// --- Persistent Couple Partner Avatar ---
-function getOrCreateCouplePartner() {
-  if (window.couplePhase3.partnerMesh) return window.couplePhase3.partnerMesh;
-  const isGirlPlayer = (y.avatar?.gender === "girl");
-  const partnerRole = isGirlPlayer ? "boy" : "girl";
-  const partnerOutfit = isGirlPlayer ? "kurta_royal" : "pink_lehenga";
-  const partnerMesh = en(co).person(K.x + 0.65, K.z, 16756941, isGirlPlayer ? "man" : "girl");
-  Xn(partnerMesh, { gender: partnerRole, outfit: partnerOutfit });
-  window.couplePhase3.partnerMesh = partnerMesh;
+// --- Persistent Couple Partner Avatar with Guaranteed Visibility & NaN Fallback ---
+function getOrCreateCouplePartner(role, name, outfit) {
+  const isGirlPlayer = (window.playerRole === "girl" || y?.avatar?.gender === "girl");
+  const partnerRole = role || (isGirlPlayer ? "boy" : "girl");
+  const partnerOutfit = outfit || (isGirlPlayer ? "kurta_royal" : "pink_lehenga");
+
+  let partnerMesh = window.couplePhase3.partnerMesh;
+  if (!partnerMesh) {
+    const spawnX = (typeof K !== "undefined" && Number.isFinite(K.x)) ? K.x + 0.65 : 0.65;
+    const spawnZ = (typeof K !== "undefined" && Number.isFinite(K.z)) ? K.z : 12;
+    partnerMesh = en(co).person(spawnX, spawnZ, 16756941, partnerRole === "boy" ? "man" : "girl");
+    Xn(partnerMesh, { gender: partnerRole, outfit: partnerOutfit });
+    window.couplePhase3.partnerMesh = partnerMesh;
+  }
+  
+  if (partnerMesh && partnerMesh.group) {
+    partnerMesh.group.visible = true;
+    partnerMesh.group.traverse((child) => {
+      child.frustumCulled = false;
+      child.visible = true;
+    });
+  }
+
+  // Hide single-player bedroom dummy NPC so only real partner is visible
+  if (typeof pe !== "undefined" && pe?.companion) {
+    pe.companion.group.visible = false;
+  }
+
   return partnerMesh;
 }
+window.getOrCreateCouplePartner = getOrCreateCouplePartner;
 
 // --- 3D Speech Bubble for Live Text Chat ---
 function showAvatarSpeechBubble(personMesh, text, senderName) {
@@ -9762,6 +9890,9 @@ function updateProposalButtonVisibility() {
 // --- Full Proposal Cutscene Flow ---
 function startProposalCutscene(isRemote = false) {
   if (!isRemote) {
+    if (typeof broadcastRPC === "function") {
+      broadcastRPC({ type: "PROPOSAL_EVENT", action: "start" });
+    }
     sendPeerData({ type: "proposal_start" });
   }
 
@@ -9825,6 +9956,9 @@ function startProposalCutscene(isRemote = false) {
 
 function onProposalAccepted(isRemote = false) {
   if (!isRemote) {
+    if (typeof broadcastRPC === "function") {
+      broadcastRPC({ type: "PROPOSAL_EVENT", action: "accepted" });
+    }
     sendPeerData({ type: "proposal_accepted" });
   }
   const pModal = document.getElementById("proposal-modal");
@@ -9929,21 +10063,217 @@ if (holdHandsBtn) {
   };
 }
 
-// --- WebRTC (PeerJS) & Live Chat & Voice Call ---
+// --- WebRTC (PeerJS) & Unified RPC Broadcast Bus ---
 let couplePeerInstance = null;
 let activePeerConn = null;
+const peerConnections = new Set();
 let activeMediaCall = null;
 let localVoiceStream = null;
 
-function sendPeerData(data) {
+function broadcastRPC(payload) {
+  if (!payload) return;
   try {
-    if (activePeerConn && activePeerConn.open) {
-      activePeerConn.send(data);
+    let sent = false;
+    for (const conn of peerConnections) {
+      if (conn && conn.open) {
+        conn.send(payload);
+        sent = true;
+      }
+    }
+    if (!sent && activePeerConn && activePeerConn.open) {
+      activePeerConn.send(payload);
     }
   } catch (e) {
-    console.warn("Peer send error:", e);
+    console.warn("broadcastRPC error:", e);
   }
 }
+window.broadcastRPC = broadcastRPC;
+
+function sendPeerData(data) {
+  broadcastRPC(data);
+}
+window.sendPeerData = sendPeerData;
+
+function onReceiveRPC(data) {
+  if (!data || typeof data !== "object") return;
+  const isGirl = (window.playerRole === "girl" || y?.avatar?.gender === "girl");
+
+  switch (data.type) {
+    case "REQUEST_STATE": {
+      const myRole = window.playerRole || (isGirl ? "girl" : "boy");
+      const myName = localStorage.getItem("couple_player_name") || (myRole === "girl" ? "Trapti 💖" : "Iglu 💙");
+      sendPeerData({
+        type: "FULL_STATE",
+        role: myRole,
+        name: myName,
+        outfit: y?.avatar?.outfit,
+        p: [Number(K.x.toFixed(3)), Number(K.y.toFixed(3)), Number(K.z.toFixed(3))],
+        r: Number(je.group.rotation.y.toFixed(3)),
+        isHoldingHands: !!window.couplePhase3?.isHoldingHands,
+        timestamp: Date.now()
+      });
+      break;
+    }
+    case "FULL_STATE": {
+      const partner = getOrCreateCouplePartner(data.role, data.name, data.outfit);
+      if (data.outfit && partner) {
+        Xn(partner, { gender: data.role || (isGirl ? "boy" : "girl"), outfit: data.outfit });
+      }
+      if (data.p && Number.isFinite(data.p[0]) && Number.isFinite(data.p[2])) {
+        window.remoteTargetPosition.set(data.p[0], data.p[1] || 0, data.p[2]);
+        partner.group.position.copy(window.remoteTargetPosition);
+      }
+      if (typeof data.r === "number") {
+        window.remoteTargetRotationY = data.r;
+        partner.group.rotation.y = data.r;
+      }
+      partner.group.visible = true;
+      partner.group.traverse(c => { c.frustumCulled = false; c.visible = true; });
+      if (typeof pe !== "undefined" && pe?.companion) {
+        pe.companion.group.visible = false;
+      }
+      if (data.isHoldingHands !== undefined) {
+        window.couplePhase3.isHoldingHands = !!data.isHoldingHands;
+        const bBtn = document.getElementById("btn-hold-hands");
+        if (bBtn) {
+          bBtn.classList.toggle("active", window.couplePhase3.isHoldingHands);
+          bBtn.textContent = window.couplePhase3.isHoldingHands ? "💔 Release Hands" : "🤝 Hold Hands";
+        }
+      }
+      break;
+    }
+    case "HEARTBEAT": {
+      const partner = getOrCreateCouplePartner(data.role, data.name);
+      if (data.p && Number.isFinite(data.p[0]) && Number.isFinite(data.p[2])) {
+        window.remoteTargetPosition.set(data.p[0], data.p[1] || 0, data.p[2]);
+      }
+      if (typeof data.r === "number") {
+        window.remoteTargetRotationY = data.r;
+      }
+      partner.group.visible = true;
+      break;
+    }
+    case "TRANSFORM": {
+      const partner = getOrCreateCouplePartner();
+      if (data.p && Number.isFinite(data.p[0]) && Number.isFinite(data.p[2])) {
+        window.remoteTargetPosition.set(data.p[0], data.p[1] || 0, data.p[2]);
+      }
+      if (typeof data.r === "number") {
+        window.remoteTargetRotationY = data.r;
+      }
+      window.remoteTargetAnim = data.anim || "idle";
+      partner.group.visible = true;
+      if (data.hold !== undefined && data.hold !== window.couplePhase3.isHoldingHands) {
+        window.couplePhase3.isHoldingHands = !!data.hold;
+        const bBtn = document.getElementById("btn-hold-hands");
+        if (bBtn) {
+          bBtn.classList.toggle("active", window.couplePhase3.isHoldingHands);
+          bBtn.textContent = window.couplePhase3.isHoldingHands ? "💔 Release Hands" : "🤝 Hold Hands";
+        }
+      }
+      // If female auto-follow during hand-holding:
+      if (window.couplePhase3.isHoldingHands && window.playerRole === "girl" && data.p) {
+        const sideX = Math.cos(data.r || 0) * 0.65;
+        const sideZ = -Math.sin(data.r || 0) * 0.65;
+        K.set(data.p[0] + sideX, data.p[1] || 0, data.p[2] + sideZ);
+        je.group.position.set(K.x, K.y, K.z);
+        je.group.rotation.y = data.r || 0;
+        if (data.anim === "walk") {
+          const wCycle = Math.sin(ve * 10) * 0.45;
+          if (je.legs?.[0]) je.legs[0].rotation.x = wCycle;
+          if (je.legs?.[1]) je.legs[1].rotation.x = -wCycle;
+        } else {
+          if (je.legs?.[0]) je.legs[0].rotation.x = 0;
+          if (je.legs?.[1]) je.legs[1].rotation.x = 0;
+        }
+      }
+      break;
+    }
+    case "BEDROOM_ACTION": {
+      triggerBedAction(data.subAction, true, data);
+      break;
+    }
+    case "FLOATING_EMOJI": {
+      spawnFloatingEmoji(data.emoji, data.originPos, true);
+      break;
+    }
+    case "OUTFIT_CHANGE": {
+      const partner = getOrCreateCouplePartner(data.role, null, data.outfit);
+      if (partner && data.outfit) {
+        Xn(partner, { gender: data.gender || (isGirl ? "boy" : "girl"), outfit: data.outfit });
+      }
+      break;
+    }
+    case "HOLD_HANDS":
+    case "hand_hold": {
+      window.couplePhase3.isHoldingHands = !!data.active;
+      const bBtn = document.getElementById("btn-hold-hands");
+      if (bBtn) {
+        bBtn.classList.toggle("active", window.couplePhase3.isHoldingHands);
+        bBtn.textContent = window.couplePhase3.isHoldingHands ? "💔 Release Hands" : "🤝 Hold Hands";
+      }
+      if (!window.couplePhase3.isHoldingHands) {
+        je.arms?.forEach(a => a.rotation.set(0, 0, 0));
+        const partner = window.couplePhase3.partnerMesh;
+        if (partner) partner.arms?.forEach(a => a.rotation.set(0, 0, 0));
+      }
+      break;
+    }
+    case "PROPOSAL_EVENT": {
+      if (data.action === "start") {
+        startProposalCutscene(true);
+      } else if (data.action === "accepted") {
+        onProposalAccepted(true);
+      }
+      break;
+    }
+    case "proposal_start": {
+      startProposalCutscene(true);
+      break;
+    }
+    case "proposal_accepted": {
+      onProposalAccepted(true);
+      break;
+    }
+    case "jhoola_mount": {
+      if (!Ee || Ee.id !== data.rideId) {
+        mountRideTogether(data.rideId, true);
+      }
+      break;
+    }
+    case "jhoola_dismount": {
+      if (Ee) {
+        dismountRideTogether(true);
+      }
+      break;
+    }
+    case "chat": {
+      appendChatMessage(data.sender, data.text, false);
+      const partner = getOrCreateCouplePartner();
+      showAvatarSpeechBubble(partner, data.text, data.sender);
+      break;
+    }
+    case "hand_hold_pos": {
+      if (window.couplePhase3.isHoldingHands && window.playerRole === "girl") {
+        const sideX = Math.cos(data.heading) * 0.65;
+        const sideZ = -Math.sin(data.heading) * 0.65;
+        K.set(data.x + sideX, data.y, data.z + sideZ);
+        je.group.position.set(K.x, K.y, K.z);
+        je.group.rotation.y = data.heading;
+        if (data.isMoving) {
+          const wCycle = Math.sin(ve * 10) * 0.45;
+          if (je.legs?.[0]) je.legs[0].rotation.x = wCycle;
+          if (je.legs?.[1]) je.legs[1].rotation.x = -wCycle;
+        } else {
+          if (je.legs?.[0]) je.legs[0].rotation.x = 0;
+          if (je.legs?.[1]) je.legs[1].rotation.x = 0;
+        }
+      }
+      break;
+    }
+  }
+}
+window.onReceiveRPC = onReceiveRPC;
 
 function initPeerJSMultiplayer() {
   if (typeof Peer === "undefined") {
@@ -9952,9 +10282,10 @@ function initPeerJSMultiplayer() {
   }
   const urlRoom = new URL(location.href).searchParams.get("room") || localStorage.getItem("couple_room_code") || "mela";
   const normRoom = urlRoom.toLowerCase().replace(/[^a-z0-9]/g, "").slice(0, 14);
-  const myRole = (localStorage.getItem("couple_player_role") || "boy").toLowerCase();
+  const myRole = (window.playerRole || localStorage.getItem("couple_player_role") || "boy").toLowerCase();
+  const targetRole = myRole === "boy" ? "girl" : "boy";
   const myPeerId = "diwali-" + normRoom + "-" + myRole;
-  const targetPeerId = "diwali-" + normRoom + "-" + (myRole === "boy" ? "girl" : "boy");
+  const targetPeerId = "diwali-" + normRoom + "-" + targetRole;
 
   try {
     couplePeerInstance = new Peer(myPeerId, {
@@ -9968,13 +10299,11 @@ function initPeerJSMultiplayer() {
 
     couplePeerInstance.on("open", (id) => {
       console.log("✔ WebRTC Peer connected:", id);
-      // Attempt connect to partner
       connectToPartnerPeer(targetPeerId);
     });
 
     couplePeerInstance.on("connection", (conn) => {
-      console.log("✔ Connected with partner peer!");
-      activePeerConn = conn;
+      console.log("✔ Incoming connection from partner:", conn.peer);
       setupPeerDataHandlers(conn);
     });
 
@@ -10000,7 +10329,6 @@ function initPeerJSMultiplayer() {
 
     couplePeerInstance.on("error", (err) => {
       if (err.type === "unavailable-id") {
-        // Fallback ID if reloading in same browser tab
         const altId = myPeerId + "-" + Math.floor(Math.random() * 1000);
         couplePeerInstance = new Peer(altId);
       }
@@ -10008,61 +10336,110 @@ function initPeerJSMultiplayer() {
   } catch (e) {
     console.warn("PeerJS initialization error:", e);
   }
+
+  // Auto-retry connection if peer disconnected
+  setInterval(() => {
+    if (peerConnections.size === 0 && couplePeerInstance && !couplePeerInstance.destroyed) {
+      connectToPartnerPeer(targetPeerId);
+    }
+  }, 2500);
+
+  // 20Hz continuous transform broadcast (50ms)
+  setInterval(() => {
+    if (typeof K === "undefined" || !K || typeof je === "undefined" || !je) return;
+    if (!Number.isFinite(K.x) || !Number.isFinite(K.z)) return;
+    const isMoving = (typeof ne !== "undefined" && ne.size > 0) || (typeof ye !== "undefined" && (Math.abs(ye.x) > 0.05 || Math.abs(ye.y) > 0.05));
+    broadcastRPC({
+      type: "TRANSFORM",
+      p: [Number(K.x.toFixed(3)), Number(K.y.toFixed(3)), Number(K.z.toFixed(3))],
+      r: Number(je.group.rotation.y.toFixed(3)),
+      anim: isMoving ? "walk" : "idle",
+      hold: !!window.couplePhase3?.isHoldingHands
+    });
+  }, 50);
+
+  // 1000ms continuous heartbeat
+  setInterval(() => {
+    if (typeof K === "undefined" || !K || typeof je === "undefined" || !je) return;
+    const isGirl = (window.playerRole === "girl" || y?.avatar?.gender === "girl");
+    const myRole = window.playerRole || (isGirl ? "girl" : "boy");
+    const myName = localStorage.getItem("couple_player_name") || (myRole === "girl" ? "Trapti 💖" : "Iglu 💙");
+    broadcastRPC({
+      type: "HEARTBEAT",
+      role: myRole,
+      name: myName,
+      p: [Number(K.x.toFixed(3)), Number(K.y.toFixed(3)), Number(K.z.toFixed(3))],
+      r: Number(je.group.rotation.y.toFixed(3)),
+      outfit: y?.avatar?.outfit,
+      timestamp: Date.now()
+    });
+  }, 1000);
 }
 
 function connectToPartnerPeer(targetId) {
-  if (!couplePeerInstance) return;
+  if (!couplePeerInstance || couplePeerInstance.disconnected || couplePeerInstance.destroyed) return;
   try {
-    const conn = couplePeerInstance.connect(targetId);
-    activePeerConn = conn;
+    const conn = couplePeerInstance.connect(targetId, { reliable: true });
     setupPeerDataHandlers(conn);
-  } catch (e) {}
+  } catch (e) {
+    console.warn("connectToPartnerPeer error:", e);
+  }
 }
 
 function setupPeerDataHandlers(conn) {
-  conn.on("data", (data) => {
-    if (!data) return;
-    if (data.type === "chat") {
-      appendChatMessage(data.sender, data.text, false);
-      const partner = getOrCreateCouplePartner();
-      showAvatarSpeechBubble(partner, data.text, data.sender);
-    } else if (data.type === "hand_hold") {
-      window.couplePhase3.isHoldingHands = !!data.active;
-      const bBtn = document.getElementById("btn-hold-hands");
-      if (bBtn) {
-        bBtn.classList.toggle("active", window.couplePhase3.isHoldingHands);
-        bBtn.textContent = window.couplePhase3.isHoldingHands ? "💔 Release Hands" : "🤝 Hold Hands";
-      }
-    } else if (data.type === "proposal_start") {
-      startProposalCutscene(true);
-    } else if (data.type === "proposal_accepted") {
-      onProposalAccepted(true);
-    } else if (data.type === "jhoola_mount") {
-      if (!Ee || Ee.id !== data.rideId) {
-        mountRideTogether(data.rideId, true);
-      }
-    } else if (data.type === "jhoola_dismount") {
-      if (Ee) {
-        dismountRideTogether(true);
-      }
-    } else if (data.type === "hand_hold_pos") {
-      // Female automatic partner follow without keyboard!
-      if (window.couplePhase3.isHoldingHands && window.playerRole === "girl") {
-        const sideX = Math.cos(data.heading) * 0.65;
-        const sideZ = -Math.sin(data.heading) * 0.65;
-        K.set(data.x + sideX, data.y, data.z + sideZ);
-        je.group.position.set(K.x, K.y, K.z);
-        je.group.rotation.y = data.heading;
+  conn.on("open", () => {
+    console.log("✔ Peer connection established with:", conn.peer);
+    activePeerConn = conn;
+    peerConnections.add(conn);
 
-        if (data.isMoving) {
-          const wCycle = Math.sin(ve * 10) * 0.45;
-          if (je.legs?.[0]) je.legs[0].rotation.x = wCycle;
-          if (je.legs?.[1]) je.legs[1].rotation.x = -wCycle;
-        } else {
-          if (je.legs?.[0]) je.legs[0].rotation.x = 0;
-          if (je.legs?.[1]) je.legs[1].rotation.x = 0;
-        }
-      }
+    const partner = getOrCreateCouplePartner();
+    if (partner) {
+      partner.group.visible = true;
+    }
+
+    const isGirl = (window.playerRole === "girl" || y?.avatar?.gender === "girl");
+    const myRole = window.playerRole || (isGirl ? "girl" : "boy");
+    const myName = localStorage.getItem("couple_player_name") || (myRole === "girl" ? "Trapti 💖" : "Iglu 💙");
+
+    function sendHandshake() {
+      broadcastRPC({ type: "REQUEST_STATE", role: myRole, name: myName });
+      broadcastRPC({
+        type: "FULL_STATE",
+        role: myRole,
+        name: myName,
+        outfit: y?.avatar?.outfit,
+        p: [Number(K.x.toFixed(3)), Number(K.y.toFixed(3)), Number(K.z.toFixed(3))],
+        r: Number(je.group.rotation.y.toFixed(3)),
+        isHoldingHands: !!window.couplePhase3?.isHoldingHands,
+        timestamp: Date.now()
+      });
+    }
+
+    sendHandshake();
+    [500, 1500, 3000].forEach(delay => setTimeout(sendHandshake, delay));
+  });
+
+  conn.on("data", (data) => {
+    try {
+      onReceiveRPC(data);
+    } catch (err) {
+      console.warn("RPC data processing error:", err);
+    }
+  });
+
+  conn.on("close", () => {
+    console.log("Peer connection closed:", conn.peer);
+    peerConnections.delete(conn);
+    if (activePeerConn === conn) {
+      activePeerConn = Array.from(peerConnections)[0] || null;
+    }
+  });
+
+  conn.on("error", (err) => {
+    console.warn("Peer connection error:", err);
+    peerConnections.delete(conn);
+    if (activePeerConn === conn) {
+      activePeerConn = Array.from(peerConnections)[0] || null;
     }
   });
 }
@@ -10228,6 +10605,9 @@ document.querySelectorAll(".chat-quick-emojis button").forEach(btn => {
     if (chatInput) {
       chatInput.value += emoji;
       chatInput.focus();
+    }
+    if (typeof spawnFloatingEmoji === "function") {
+      spawnFloatingEmoji(emoji, { x: K.x, y: K.y + 1.8, z: K.z }, false);
     }
   };
 });
