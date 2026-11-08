@@ -1,0 +1,19 @@
+{
+  "version": 2,
+  "outputDirectory": ".",
+  "cleanUrls": true,
+  "rewrites": [
+    {
+      "source": "/diwali",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/diwali/",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/diwali/(.*)",
+      "destination": "/$1"
+    }
+  ]
+}

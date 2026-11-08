@@ -1,0 +1,20 @@
+{
+  "name": "diwali-mela",
+  "version": "1.0.0",
+  "description": "Diwali Mela 3D web experience cloned locally",
+  "type": "module",
+  "scripts": {
+    "start": "node server.mjs",
+    "serve": "node server.mjs",
+    "format": "prettier --write \"**/*.{js,css,html}\"",
+    "scrape": "node scripts/scraper.mjs",
+    "build": "node -e \"process.exit(0)\""
+  },
+  "devDependencies": {
+    "playwright": "^1.58.2",
+    "prettier": "^3.8.1"
+  },
+  "dependencies": {
+    "peerjs": "^1.5.5"
+  }
+}

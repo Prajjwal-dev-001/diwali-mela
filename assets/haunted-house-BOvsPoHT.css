@@ -1,0 +1,173 @@
+.haunted-active header,
+.haunted-active footer,
+.haunted-active #mission,
+.haunted-active #map-dock,
+.haunted-active #mobile-map,
+.haunted-active #location,
+.haunted-active #dialogue,
+.haunted-active #mission-splash,
+.haunted-active #interact,
+.haunted-active #shagun-link,
+.haunted-active #party-show-banner,
+.haunted-active #party-show-notice,
+.haunted-active #cracker-controls {
+  display: none !important;
+}
+.haunted-active #game {
+  filter: none !important;
+}
+#haunted-ui {
+  position: fixed;
+  inset: 0;
+  z-index: 9;
+  pointer-events: none;
+  color: #f5e9d5;
+  font: 14px system-ui;
+  background: radial-gradient(ellipse at center, transparent 40%, #09071477);
+}
+#haunted-ui button {
+  pointer-events: auto;
+  min-height: 46px;
+  border: 1px solid #a4d0a577;
+  background: #17231ff2;
+  color: #dcffe5;
+  border-radius: 10px;
+  padding: 10px 14px;
+  font: 600 13px system-ui;
+  cursor: pointer;
+}
+#haunted-ui button:focus-visible {
+  outline: 3px solid #f5c77a;
+  outline-offset: 3px;
+}
+.haunt-top {
+  position: absolute;
+  top: max(12px, env(safe-area-inset-top));
+  left: max(12px, env(safe-area-inset-left));
+  right: max(12px, env(safe-area-inset-right));
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 10px;
+}
+.haunt-top small {
+  display: block;
+  color: #b2c1c5;
+  font-size: 10px;
+  letter-spacing: 1.7px;
+}
+.haunt-top strong {
+  display: block;
+  margin-top: 5px;
+  font-size: clamp(13px, 2.5vw, 18px);
+  text-shadow: 0 2px 4px #000;
+}
+.haunt-top > div {
+  min-width: 0;
+  max-width: calc(100% - 138px);
+}
+.haunt-top > button {
+  flex-shrink: 0;
+}
+#haunt-message {
+  position: absolute;
+  left: 50%;
+  transform: translate(-50%);
+  top: max(78px, calc(env(safe-area-inset-top) + 65px));
+  width: min(480px, calc(100% - 28px));
+  padding: 10px 14px;
+  margin: 0;
+  background: #10151cda;
+  border: 1px solid #b9cbb433;
+  border-radius: 10px;
+  text-align: center;
+  line-height: 1.5;
+  font-size: 12px;
+}
+#haunt-hint {
+  position: absolute;
+  right: max(14px, env(safe-area-inset-right));
+  bottom: max(155px, calc(env(safe-area-inset-bottom) + 148px));
+}
+#haunt-action {
+  position: absolute;
+  right: max(14px, env(safe-area-inset-right));
+  bottom: max(24px, env(safe-area-inset-bottom));
+  max-width: calc(100% - 145px);
+}
+#haunt-result {
+  position: absolute;
+  pointer-events: auto;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: min(420px, calc(100% - 32px));
+  box-sizing: border-box;
+  background: #15251ff5;
+  border: 1px solid #a2d3a8;
+  border-radius: 18px;
+  padding: 24px;
+  text-align: center;
+  box-shadow: 0 15px 70px #0008;
+}
+#haunt-result small {
+  color: #b6e6be;
+  letter-spacing: 2px;
+  font-size: 10px;
+}
+#haunt-result h2 {
+  font: 28px Georgia;
+  margin: 14px 0;
+}
+#haunt-result p {
+  line-height: 1.6;
+  color: #d1dbc9;
+}
+#haunt-result button {
+  margin: 4px;
+}
+#haunted-ui [hidden] {
+  display: none !important;
+}
+@media (orientation: landscape) and (max-height: 500px) {
+  #haunt-message {
+    top: 66px;
+    width: min(420px, calc(100% - 260px));
+  }
+  #haunt-hint {
+    bottom: 145px;
+  }
+  #haunt-result {
+    padding: 14px;
+  }
+  #haunt-result h2 {
+    margin: 8px;
+  }
+}
+.haunted-active #radio-dock {
+  top: auto !important;
+  left: auto !important;
+  right: max(12px, env(safe-area-inset-right)) !important;
+  bottom: 210px !important;
+  transform: none !important;
+}
+@media (orientation: landscape) and (max-height: 500px) {
+  .haunted-active #radio-dock {
+    top: max(66px, calc(env(safe-area-inset-top) + 60px)) !important;
+    bottom: auto !important;
+  }
+  .haunted-active #radio-dock .radio-heading {
+    display: none;
+  }
+  #haunt-message {
+    left: 12px;
+    transform: none;
+    width: calc(100% - 240px);
+    box-sizing: border-box;
+  }
+  #haunt-hint {
+    left: 126px;
+    right: auto;
+    bottom: max(24px, env(safe-area-inset-bottom));
+  }
+}
