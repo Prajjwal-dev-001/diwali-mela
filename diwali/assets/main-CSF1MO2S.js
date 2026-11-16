@@ -10248,9 +10248,57 @@ function onReceiveRPC(data) {
       break;
     }
     case "chat": {
-      appendChatMessage(data.sender, data.text, false);
+      if (!data || !data.text) break;
+      const msgId = data.msgId;
+      if (msgId && window.processedChatIds && window.processedChatIds.has(msgId)) break;
+      if (msgId && window.processedChatIds) window.processedChatIds.add(msgId);
+
+      if (typeof hideTypingIndicator === "function") {
+        hideTypingIndicator();
+      }
+
+      appendChatMessage(data.sender, data.text, false, msgId, null, data.timestamp);
       const partner = getOrCreateCouplePartner();
       showAvatarSpeechBubble(partner, data.text, data.sender);
+
+      if (msgId) {
+        const cPanel = document.getElementById("chat-panel");
+        const isChatOpen = cPanel && cPanel.classList.contains("open");
+        const isTabVisible = document.visibilityState === "visible";
+        if (isChatOpen && isTabVisible) {
+          broadcastRPC({
+            type: "chat_receipt",
+            status: "seen",
+            msgId,
+            from: typeof getMyPeerId === "function" ? getMyPeerId() : (window.__myPeerId || "peer")
+          });
+        } else {
+          if (window.unseenMsgIds) window.unseenMsgIds.add(msgId);
+          broadcastRPC({
+            type: "chat_receipt",
+            status: "delivered",
+            msgId,
+            from: typeof getMyPeerId === "function" ? getMyPeerId() : (window.__myPeerId || "peer")
+          });
+        }
+      }
+      break;
+    }
+    case "chat_receipt": {
+      if (!data || !data.status) break;
+      if (typeof updateMessageReceipt === "function") {
+        if (data.msgIds && Array.isArray(data.msgIds)) {
+          data.msgIds.forEach(id => updateMessageReceipt(id, data.status));
+        } else if (data.msgId) {
+          updateMessageReceipt(data.msgId, data.status);
+        }
+      }
+      break;
+    }
+    case "chat_typing": {
+      if (typeof handleRemoteTyping === "function") {
+        handleRemoteTyping(data);
+      }
       break;
     }
     case "hand_hold_pos": {
@@ -10285,6 +10333,7 @@ function initPeerJSMultiplayer() {
   const myRole = (window.playerRole || localStorage.getItem("couple_player_role") || "boy").toLowerCase();
   const targetRole = myRole === "boy" ? "girl" : "boy";
   const myPeerId = "diwali-" + normRoom + "-" + myRole;
+  window.__myPeerId = myPeerId;
   const targetPeerId = "diwali-" + normRoom + "-" + targetRole;
 
   try {
@@ -10525,92 +10574,338 @@ if (muteBtn) {
   };
 }
 
-// --- Live Chat UI Logic ---
-const chatToggleBtn = document.getElementById("chat-toggle-btn");
-const chatPanel = document.getElementById("chat-panel");
-const chatCloseBtn = document.getElementById("chat-close-btn");
-const chatForm = document.getElementById("chat-form");
-const chatInput = document.getElementById("chat-input");
-const chatMessages = document.getElementById("chat-messages");
+// --- Live Couple Chat: Deduplication, WhatsApp-Style Receipts & Live Typing Counter ---
+const processedChatIds = new Set();
+const unseenMsgIds = new Set();
+window.processedChatIds = processedChatIds;
+window.unseenMsgIds = unseenMsgIds;
 
-if (chatToggleBtn && chatPanel) {
-  chatToggleBtn.onclick = () => {
-    chatPanel.classList.toggle("open");
-    if (chatPanel.classList.contains("open")) {
-      chatInput?.focus();
-    }
-  };
+function getMyPeerId() {
+  if (window.__myPeerId) return window.__myPeerId;
+  const urlRoom = new URL(location.href).searchParams.get("room") || localStorage.getItem("couple_room_code") || "mela";
+  const normRoom = urlRoom.toLowerCase().replace(/[^a-z0-9]/g, "").slice(0, 14);
+  const myRole = (window.playerRole || localStorage.getItem("couple_player_role") || "boy").toLowerCase();
+  const id = "diwali-" + normRoom + "-" + myRole;
+  window.__myPeerId = id;
+  return id;
 }
-if (chatCloseBtn && chatPanel) {
-  chatCloseBtn.onclick = () => {
-    chatPanel.classList.remove("open");
-  };
+window.getMyPeerId = getMyPeerId;
+
+function escapeChatHtml(str) {
+  if (!str) return "";
+  return String(str)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
 }
 
-function appendChatMessage(sender, text, isSelf = false) {
+function appendChatMessage(sender, text, isSelf = false, msgId = null, initialStatus = "sent", timestamp = null) {
+  const chatMessages = document.getElementById("chat-messages");
   if (!chatMessages) return;
+
   const msgEl = document.createElement("div");
   msgEl.className = "chat-msg " + (isSelf ? "self" : "partner");
-  msgEl.innerHTML = `<span class="sender-tag">${sender}</span>${text}`;
+  if (msgId) {
+    msgEl.setAttribute("data-msg-id", msgId);
+  }
+
+  const d = timestamp ? new Date(timestamp) : new Date();
+  const timeStr = d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+
+  let tickHtml = "";
+  if (isSelf) {
+    if (initialStatus === "seen") {
+      tickHtml = '<span class="msg-tick tick-seen" title="Seen">✓✓</span>';
+    } else if (initialStatus === "delivered") {
+      tickHtml = '<span class="msg-tick tick-delivered" title="Delivered">✓✓</span>';
+    } else {
+      tickHtml = '<span class="msg-tick tick-sent" title="Sent">✓</span>';
+    }
+  }
+
+  msgEl.innerHTML = `
+    <span class="sender-tag">${escapeChatHtml(sender)}</span>
+    <span class="msg-text">${escapeChatHtml(text)}</span>
+    <span class="msg-meta">
+      <span class="msg-time">${timeStr}</span>
+      ${tickHtml}
+    </span>
+  `;
+
   chatMessages.appendChild(msgEl);
   chatMessages.scrollTop = chatMessages.scrollHeight;
 }
+window.appendChatMessage = appendChatMessage;
 
-if (chatInput) {
-  const onFocusChat = () => {
-    try { document.exitPointerLock?.(); } catch {}
-    if (typeof ne !== 'undefined' && ne.clear) ne.clear();
-    ['KeyW', 'KeyA', 'KeyS', 'KeyD', 'ShiftLeft', 'Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].forEach(code => {
-      window.dispatchEvent(new KeyboardEvent('keyup', { code, bubbles: true }));
-    });
-  };
-  chatInput.addEventListener('focus', onFocusChat);
-  chatInput.addEventListener('click', onFocusChat);
+function updateMessageReceipt(msgId, status) {
+  if (!msgId) return;
+  const msgEl = document.querySelector(`.chat-msg.self[data-msg-id="${msgId}"]`);
+  if (!msgEl) return;
+  const tickEl = msgEl.querySelector(".msg-tick");
+  if (!tickEl) return;
 
-  ['keydown', 'keyup', 'keypress'].forEach(evt => {
-    chatInput.addEventListener(evt, (e) => {
-      if (e.key === 'Enter') {
-        e.preventDefault();
-        const sendBtn = document.getElementById('chat-send-btn');
-        if (sendBtn) sendBtn.click();
-      } else {
-        e.stopPropagation();
-        e.stopImmediatePropagation();
-      }
-    });
+  // Never downgrade a 'seen' status back to 'delivered'
+  if (tickEl.classList.contains("tick-seen") && status === "delivered") {
+    return;
+  }
+
+  if (status === "seen") {
+    tickEl.className = "msg-tick tick-seen";
+    tickEl.textContent = "✓✓";
+    tickEl.title = "Seen";
+  } else if (status === "delivered") {
+    tickEl.className = "msg-tick tick-delivered";
+    tickEl.textContent = "✓✓";
+    tickEl.title = "Delivered";
+  }
+}
+window.updateMessageReceipt = updateMessageReceipt;
+
+function markUnseenMessagesAsSeen() {
+  if (unseenMsgIds.size === 0) return;
+  const ids = Array.from(unseenMsgIds);
+  unseenMsgIds.clear();
+  broadcastRPC({
+    type: "chat_receipt",
+    status: "seen",
+    msgIds: ids,
+    from: getMyPeerId()
   });
 }
+window.markUnseenMessagesAsSeen = markUnseenMessagesAsSeen;
 
-if (chatForm && chatInput) {
-  chatForm.onsubmit = (e) => {
-    e.preventDefault();
+let remoteTypingExpireTimeout = null;
+function handleRemoteTyping(data) {
+  const container = document.getElementById("chat-typing-container");
+  const textEl = document.getElementById("chat-typing-text");
+  if (!container || !textEl) return;
+
+  if (remoteTypingExpireTimeout) {
+    clearTimeout(remoteTypingExpireTimeout);
+    remoteTypingExpireTimeout = null;
+  }
+
+  if (data && data.isTyping && data.charCount > 0) {
+    const name = data.senderName || "Partner";
+    textEl.textContent = `✍️ ${name} is typing... (${data.charCount} chars)`;
+    container.style.display = "flex";
+
+    remoteTypingExpireTimeout = setTimeout(() => {
+      container.style.display = "none";
+    }, 3500);
+
+    const chatMessages = document.getElementById("chat-messages");
+    if (chatMessages) {
+      const isNearBottom = chatMessages.scrollHeight - chatMessages.scrollTop - chatMessages.clientHeight < 60;
+      if (isNearBottom) {
+        chatMessages.scrollTop = chatMessages.scrollHeight;
+      }
+    }
+  } else {
+    container.style.display = "none";
+  }
+}
+window.handleRemoteTyping = handleRemoteTyping;
+
+function hideTypingIndicator() {
+  if (remoteTypingExpireTimeout) {
+    clearTimeout(remoteTypingExpireTimeout);
+    remoteTypingExpireTimeout = null;
+  }
+  const container = document.getElementById("chat-typing-container");
+  if (container) container.style.display = "none";
+}
+window.hideTypingIndicator = hideTypingIndicator;
+
+function initCoupleChatUI() {
+  if (window.__coupleChatInitialized) return;
+  window.__coupleChatInitialized = true;
+
+  const chatToggleBtn = document.getElementById("chat-toggle-btn");
+  const chatPanel = document.getElementById("chat-panel");
+  const chatCloseBtn = document.getElementById("chat-close-btn");
+  const chatForm = document.getElementById("chat-form");
+  const chatInput = document.getElementById("chat-input");
+  const chatSendBtn = document.getElementById("chat-send-btn");
+
+  if (chatToggleBtn && chatPanel) {
+    chatToggleBtn.onclick = () => {
+      chatPanel.classList.toggle("open");
+      if (chatPanel.classList.contains("open")) {
+        chatInput?.focus();
+        markUnseenMessagesAsSeen();
+      }
+    };
+  }
+
+  if (chatCloseBtn && chatPanel) {
+    chatCloseBtn.onclick = () => {
+      chatPanel.classList.remove("open");
+    };
+  }
+
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible" && chatPanel && chatPanel.classList.contains("open")) {
+      markUnseenMessagesAsSeen();
+    }
+  });
+
+  window.addEventListener("focus", () => {
+    if (chatPanel && chatPanel.classList.contains("open")) {
+      markUnseenMessagesAsSeen();
+    }
+  });
+
+  let typingThrottleTimer = null;
+  let typingDebounceTimer = null;
+  let lastTypingValue = "";
+
+  function broadcastTyping(isTyping, charCount) {
+    const myName = localStorage.getItem("couple_player_name") || (window.playerRole === "girl" ? "Trapti 💖" : "Partner 💙");
+    broadcastRPC({
+      type: "chat_typing",
+      isTyping: !!isTyping,
+      charCount: charCount || 0,
+      senderName: myName
+    });
+  }
+
+  function stopTyping() {
+    if (typingDebounceTimer) {
+      clearTimeout(typingDebounceTimer);
+      typingDebounceTimer = null;
+    }
+    if (typingThrottleTimer) {
+      clearTimeout(typingThrottleTimer);
+      typingThrottleTimer = null;
+    }
+    broadcastTyping(false, 0);
+    lastTypingValue = "";
+  }
+
+  function sendCurrentChatMessage() {
+    if (!chatInput) return;
     const text = chatInput.value.trim();
     if (!text) return;
-    const myName = localStorage.getItem("couple_player_name") || (localStorage.getItem("couple_player_role") === "girl" ? "Trapti 💖" : "Partner 💙");
-    appendChatMessage(myName, text, true);
+
+    const myName = localStorage.getItem("couple_player_name") || (window.playerRole === "girl" ? "Trapti 💖" : "Partner 💙");
+    const myPeerId = getMyPeerId();
+    const msgId = `${myPeerId}_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+
+    if (processedChatIds.has(msgId)) return;
+    processedChatIds.add(msgId);
+
+    // Immediately render locally with 'sent' status (Grey ✓)
+    appendChatMessage(myName, text, true, msgId, "sent");
+
     chatInput.value = "";
+    stopTyping();
 
     // Show floating speech bubble above self avatar
-    showAvatarSpeechBubble(je, text, myName);
+    if (typeof showAvatarSpeechBubble === "function" && typeof je !== "undefined") {
+      showAvatarSpeechBubble(je, text, myName);
+    }
 
-    // Send over WebRTC peer data channel
-    sendPeerData({ type: "chat", sender: myName, text });
-  };
+    // Broadcast over WebRTC RPC bus
+    broadcastRPC({
+      type: "chat",
+      msgId,
+      sender: myName,
+      text,
+      timestamp: Date.now()
+    });
+  }
+
+  if (chatInput) {
+    const onFocusChat = () => {
+      try { document.exitPointerLock?.(); } catch {}
+      if (typeof ne !== 'undefined' && ne.clear) ne.clear();
+      ['KeyW', 'KeyA', 'KeyS', 'KeyD', 'ShiftLeft', 'Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].forEach(code => {
+        window.dispatchEvent(new KeyboardEvent('keyup', { code, bubbles: true }));
+      });
+    };
+    chatInput.addEventListener('focus', onFocusChat);
+    chatInput.addEventListener('click', onFocusChat);
+
+    ['keydown', 'keyup', 'keypress'].forEach(evt => {
+      chatInput.addEventListener(evt, (e) => {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          if (evt === 'keydown') {
+            sendCurrentChatMessage();
+          }
+        } else {
+          e.stopPropagation();
+          e.stopImmediatePropagation();
+        }
+      });
+    });
+
+    chatInput.addEventListener("input", () => {
+      const val = chatInput.value;
+      const isTyping = val.length > 0;
+      const charCount = val.length;
+
+      // 1500ms debounce reset timer: if user stops typing, send isTyping: false
+      if (typingDebounceTimer) clearTimeout(typingDebounceTimer);
+      if (isTyping) {
+        typingDebounceTimer = setTimeout(() => {
+          broadcastTyping(false, 0);
+          lastTypingValue = "";
+        }, 1500);
+      } else {
+        stopTyping();
+        return;
+      }
+
+      // Throttled 150ms broadcast of live character count
+      if (!typingThrottleTimer) {
+        broadcastTyping(true, charCount);
+        lastTypingValue = val;
+        typingThrottleTimer = setTimeout(() => {
+          typingThrottleTimer = null;
+          const currentVal = chatInput.value;
+          if (currentVal.length > 0 && currentVal !== lastTypingValue) {
+            broadcastTyping(true, currentVal.length);
+            lastTypingValue = currentVal;
+          }
+        }, 150);
+      }
+    });
+  }
+
+  if (chatForm) {
+    chatForm.onsubmit = (e) => {
+      e.preventDefault();
+      sendCurrentChatMessage();
+    };
+  }
+
+  if (chatSendBtn) {
+    chatSendBtn.onclick = (e) => {
+      e.preventDefault();
+      sendCurrentChatMessage();
+    };
+  }
+
+  // Quick emoji reaction buttons
+  document.querySelectorAll(".chat-quick-emojis button").forEach(btn => {
+    btn.onclick = () => {
+      const emoji = btn.dataset.emoji;
+      if (chatInput) {
+        chatInput.value += emoji;
+        chatInput.focus();
+        chatInput.dispatchEvent(new Event("input", { bubbles: true }));
+      }
+      if (typeof spawnFloatingEmoji === "function" && typeof K !== "undefined") {
+        spawnFloatingEmoji(emoji, { x: K.x, y: K.y + 1.8, z: K.z }, false);
+      }
+    };
+  });
 }
-
-// Quick emoji reaction buttons
-document.querySelectorAll(".chat-quick-emojis button").forEach(btn => {
-  btn.onclick = () => {
-    const emoji = btn.dataset.emoji;
-    if (chatInput) {
-      chatInput.value += emoji;
-      chatInput.focus();
-    }
-    if (typeof spawnFloatingEmoji === "function") {
-      spawnFloatingEmoji(emoji, { x: K.x, y: K.y + 1.8, z: K.z }, false);
-    }
-  };
-});
+initCoupleChatUI();
 
 // Initialize PeerJS WebRTC
 initPeerJSMultiplayer();
